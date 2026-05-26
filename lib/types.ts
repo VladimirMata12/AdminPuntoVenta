@@ -105,6 +105,26 @@ export interface ProvisioningRequest {
   completedAt?: string | null
 }
 
+export interface PrinterSupportLog {
+  id: string
+  tenantId: string
+  source: 'pos' | 'ventas' | 'settings' | 'admin' | 'unknown'
+  severity: 'info' | 'warning' | 'error'
+  printerType: 'epson' | 'generica' | 'unknown'
+  printerHost?: string | null
+  printerPort?: number | null
+  deviceId?: string | null
+  receiptFolio?: string | null
+  errorStage?: string | null
+  errorCode?: string | null
+  errorMessage: string
+  recoveryUrl?: string | null
+  diagnostics: Record<string, unknown>
+  userAgent?: string | null
+  pageUrl?: string | null
+  createdAt: string
+}
+
 export interface Tenant {
   id: string
   name: string
@@ -121,6 +141,7 @@ export interface Tenant {
   mrr?: number
   usersCount?: number
   leadId?: string | null
+  printerSupportLogs?: PrinterSupportLog[]
 }
 
 export interface DashboardStats {
@@ -151,7 +172,7 @@ export interface DashboardChartPoint {
 export interface DashboardFunnelPoint {
   stage: string
   count: number
-  fill?: string
+  fill: string
 }
 
 export interface AdminWorkspaceData {
@@ -160,6 +181,7 @@ export interface AdminWorkspaceData {
   leadActivities: LeadActivity[]
   provisioningRequests: ProvisioningRequest[]
   tenants: Tenant[]
+  printerSupportLogs: PrinterSupportLog[]
   dashboardStats: DashboardStats
   leadsOverTimeData: DashboardChartPoint[]
   conversionFunnelData: DashboardFunnelPoint[]

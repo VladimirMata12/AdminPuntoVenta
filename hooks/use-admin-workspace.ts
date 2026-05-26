@@ -30,6 +30,7 @@ import type {
   OnboardingStep,
   ProvisioningRequest,
   ProvisioningStatus,
+  PrinterSupportLog,
   Tenant,
 } from '@/lib/types'
 
@@ -125,6 +126,26 @@ interface RawTenantUser {
   updated_at?: string | null
 }
 
+interface RawPrinterSupportLog {
+  id: string
+  tenant_id: string
+  source: PrinterSupportLog['source']
+  severity: PrinterSupportLog['severity']
+  printer_type: PrinterSupportLog['printerType']
+  printer_host?: string | null
+  printer_port?: number | null
+  device_id?: string | null
+  receipt_folio?: string | null
+  error_stage?: string | null
+  error_code?: string | null
+  error_message: string
+  recovery_url?: string | null
+  diagnostics?: Record<string, unknown> | null
+  user_agent?: string | null
+  page_url?: string | null
+  created_at: string
+}
+
 interface AdminWorkspacePayload {
   platform_admins: RawPlatformAdmin[]
   leads: RawLead[]
@@ -218,6 +239,7 @@ const emptyWorkspaceData: AdminWorkspaceData = {
   leadActivities: [],
   provisioningRequests: [],
   tenants: [],
+  printerSupportLogs: [],
   dashboardStats: {
     newLeads: 0,
     demosScheduled: 0,
@@ -447,7 +469,29 @@ function buildAttentionItems(leads: Lead[], provisioningRequests: ProvisioningRe
   return items.slice(0, 6)
 }
 
-function mapWorkspaceData(payload: AdminWorkspacePayload): AdminWorkspaceData {
+function mapPrinterSupportLog(row: RawPrinterSupportLog): PrinterSupportLog {
+  return {
+    id: String(row.id),
+    tenantId: String(row.tenant_id),
+    source: row.source || 'unknown',
+    severity: row.severity || 'error',
+    printerType: row.printer_type || 'unknown',
+    printerHost: row.printer_host || null,
+    printerPort: row.printer_port ?? null,
+    deviceId: row.device_id || null,
+    receiptFolio: row.receipt_folio || null,
+    errorStage: row.error_stage || null,
+    errorCode: row.error_code || null,
+    errorMessage: String(row.error_message || 'Error de impresion sin mensaje.'),
+    recoveryUrl: row.recovery_url || null,
+    diagnostics: row.diagnostics || {},
+    userAgent: row.user_agent || null,
+    pageUrl: row.page_url || null,
+    createdAt: row.created_at,
+  }
+}
+
+function mapWorkspaceData(payload: AdminWorkspacePayload, printerLogs: PrinterSupportLog[] = []): AdminWorkspaceData {
   const owners = (payload.platform_admins || []).map<PlatformAdminProfile>((owner) => ({
     id: String(owner.id),
     authId: String(owner.auth_id),
@@ -461,11 +505,18 @@ function mapWorkspaceData(payload: AdminWorkspacePayload): AdminWorkspaceData {
   const rawTenantMap = new Map((payload.tenants || []).map((tenant) => [tenant.id, tenant]))
   const onboardingByTenant = new Map((payload.onboarding_sessions || []).map((session) => [session.tenant_id, session]))
   const usersByTenant = new Map<string, RawTenantUser[]>()
+  const printerLogsByTenant = new Map<string, PrinterSupportLog[]>()
 
   for (const user of payload.tenant_users || []) {
     const current = usersByTenant.get(user.tenant_id) || []
     current.push(user)
     usersByTenant.set(user.tenant_id, current)
+  }
+
+  for (const log of printerLogs) {
+    const current = printerLogsByTenant.get(log.tenantId) || []
+    current.push(log)
+    printerLogsByTenant.set(log.tenantId, current)
   }
 
   const leads = (payload.leads || []).map<Lead>((lead) => ({
@@ -555,6 +606,7 @@ function mapWorkspaceData(payload: AdminWorkspacePayload): AdminWorkspaceData {
       mrr: 0,
       usersCount: tenantUsers.length,
       leadId: sourceLead?.id || onboarding?.lead_id || null,
+      printerSupportLogs: printerLogsByTenant.get(tenant.id) || [],
     }
   })
 
@@ -569,6 +621,7 @@ function mapWorkspaceData(payload: AdminWorkspacePayload): AdminWorkspaceData {
     leadActivities,
     provisioningRequests,
     tenants,
+    printerSupportLogs: printerLogs,
     dashboardStats,
     leadsOverTimeData,
     conversionFunnelData,
@@ -603,7 +656,18 @@ export function useAdminWorkspace() {
         throw functionError
       }
 
-      setWorkspace(mapWorkspaceData(data as AdminWorkspacePayload))
+      const { data: printerLogRows, error: printerLogsError } = await supabase
+        .from('printer_support_logs')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(200)
+
+      if (printerLogsError) {
+        throw printerLogsError
+      }
+
+      const printerLogs = ((printerLogRows || []) as RawPrinterSupportLog[]).map(mapPrinterSupportLog)
+      setWorkspace(mapWorkspaceData(data as AdminWorkspacePayload, printerLogs))
       setError(null)
     } catch (err) {
       console.error('[AdminWorkspace] fetch failed', err)

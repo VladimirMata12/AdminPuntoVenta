@@ -15,6 +15,7 @@ import {
   Mail,
   MoreHorizontal,
   Pause,
+  Printer,
   RefreshCw,
   Search,
   Trash2,
@@ -70,6 +71,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useAdminWorkspace } from '@/hooks/use-admin-workspace'
 import type { Tenant } from '@/lib/types'
 
+const APP_BASE_URL = (process.env.NEXT_PUBLIC_APP_BASE_URL || 'https://app.punto-venta.mx').replace(/\/+$/, '')
+
 function generateTemporaryPassword(length = 12) {
   const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%'
   const bytes = crypto.getRandomValues(new Uint8Array(length))
@@ -106,6 +109,15 @@ export default function TenantsPage() {
       setDetailOpen(true)
     }
   }, [tenants])
+
+  useEffect(() => {
+    if (!selectedTenant) return
+
+    const updatedTenant = tenants.find((tenant) => tenant.id === selectedTenant.id)
+    if (updatedTenant && updatedTenant !== selectedTenant) {
+      setSelectedTenant(updatedTenant)
+    }
+  }, [selectedTenant, tenants])
 
   const filteredTenants = useMemo(() => {
     return tenants.filter((tenant) => {
@@ -543,13 +555,54 @@ export default function TenantsPage() {
                 </TabsContent>
 
                 <TabsContent value="activity" className="mt-4">
-                  <div className="flex flex-col items-center justify-center py-12 text-center">
-                    <Activity className="mb-3 h-8 w-8 text-muted-foreground" />
-                    <p className="text-sm font-medium">Actividad</p>
-                    <p className="mt-1 text-xs text-muted-foreground">
-                      La actividad reciente del tenant aparecera aqui conforme ampliemos la telemetria operativa.
-                    </p>
-                  </div>
+                  {(selectedTenant.printerSupportLogs || []).length > 0 ? (
+                    <div className="space-y-3">
+                      {(selectedTenant.printerSupportLogs || []).slice(0, 12).map((log) => (
+                        <Card key={log.id} className="border-destructive/20">
+                          <CardContent className="space-y-2 p-3">
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="flex items-start gap-2">
+                                <Printer className="mt-0.5 h-4 w-4 text-destructive" />
+                                <div>
+                                  <p className="text-sm font-medium">
+                                    {log.receiptFolio ? `Ticket ${log.receiptFolio}` : 'Error Epson'}
+                                  </p>
+                                  <p className="text-xs text-muted-foreground">
+                                    {log.printerHost}:{log.printerPort || '-'} · {log.errorStage || 'sin etapa'} · {log.errorCode || 'sin codigo'}
+                                  </p>
+                                </div>
+                              </div>
+                              <span className="text-xs text-muted-foreground">
+                                {formatDistanceToNow(new Date(log.createdAt), { addSuffix: true })}
+                              </span>
+                            </div>
+                            <p className="rounded-md bg-muted p-2 text-xs text-muted-foreground">
+                              {log.errorMessage}
+                            </p>
+                            {log.recoveryUrl && (
+                              <a
+                                href={log.recoveryUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-flex items-center text-xs text-primary hover:underline"
+                              >
+                                <ExternalLink className="mr-1 h-3 w-3" />
+                                Abrir URL Epson
+                              </a>
+                            )}
+                          </CardContent>
+                        </Card>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="flex flex-col items-center justify-center py-12 text-center">
+                      <Activity className="mb-3 h-8 w-8 text-muted-foreground" />
+                      <p className="text-sm font-medium">Sin logs de impresora</p>
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        Los errores enviados desde el POS apareceran aqui por tenant.
+                      </p>
+                    </div>
+                  )}
                 </TabsContent>
               </Tabs>
             </>
@@ -615,10 +668,10 @@ export default function TenantsPage() {
 
                 if (result) {
                   setPasswordResult({
-                    tenantName: selectedTenant.name,
+                    tenantName: result.tenantName,
                     adminEmail: result.adminEmail || selectedTenant.adminEmail,
                     temporaryPassword: result.temporaryPassword,
-                    loginUrl: selectedTenant.loginUrl,
+                    loginUrl: `${APP_BASE_URL}/${result.tenantSlug}/login`,
                   })
                   setPasswordDialogOpen(false)
                 }
