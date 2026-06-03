@@ -82,7 +82,7 @@ function generateTemporaryPassword(length = 12) {
 export default function TenantsPage() {
   const router = useRouter()
   const { profile } = useAdminAuth()
-  const { tenants, loading, refreshing, error, refresh, busyKey, setTenantTemporaryPassword, deleteTenant } = useAdminWorkspace()
+  const { tenants, loading, refreshing, error, refresh, busyKey, setTenantTemporaryPassword, setTenantServiceStatus, deleteTenant } = useAdminWorkspace()
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState<string>('all')
   const [selectedTenant, setSelectedTenant] = useState<Tenant | null>(null)
@@ -160,6 +160,7 @@ export default function TenantsPage() {
   const totalMRR = tenants.reduce((sum, tenant) => sum + (tenant.mrr || 0), 0)
   const totalUsers = tenants.reduce((sum, tenant) => sum + (tenant.usersCount || 0), 0)
   const canSetTemporaryPassword = profile?.role === 'owner'
+  const canManageServiceStatus = profile?.role === 'owner'
   const canDeleteTenant = profile?.role === 'owner'
 
   return (
@@ -350,6 +351,28 @@ export default function TenantsPage() {
                               Definir contrasena temporal
                             </DropdownMenuItem>
                           )}
+                          {canManageServiceStatus && (
+                            <DropdownMenuItem
+                              onClick={async (event) => {
+                                event.stopPropagation()
+                                const nextStatus = tenant.status === 'suspended' ? 'active' : 'suspended'
+                                const actionLabel = nextStatus === 'suspended' ? 'pausar' : 'reactivar'
+                                const reason = nextStatus === 'suspended' ? 'Pago pendiente' : 'Pago regularizado'
+                                const confirmed = window.confirm(`¿Seguro que deseas ${actionLabel} el servicio de "${tenant.name}"?`)
+                                if (!confirmed) return
+                                await setTenantServiceStatus(tenant.id, nextStatus, reason)
+                              }}
+                              disabled={busyKey === `SET_TENANT_SERVICE_STATUS:${tenant.id}`}
+                              className={tenant.status === 'suspended' ? undefined : 'text-destructive focus:text-destructive'}
+                            >
+                              {tenant.status === 'suspended' ? (
+                                <CheckCircle className="mr-2 h-4 w-4" />
+                              ) : (
+                                <Pause className="mr-2 h-4 w-4" />
+                              )}
+                              {tenant.status === 'suspended' ? 'Reactivar servicio' : 'Pausar servicio'}
+                            </DropdownMenuItem>
+                          )}
                           <DropdownMenuItem onClick={(event) => event.stopPropagation()}>
                             <Mail className="mr-2 h-4 w-4" />
                             Contactar admin
@@ -375,13 +398,6 @@ export default function TenantsPage() {
                               Eliminar tenant
                             </DropdownMenuItem>
                           )}
-                          <DropdownMenuItem
-                            onClick={(event) => event.stopPropagation()}
-                            className="text-destructive focus:text-destructive"
-                          >
-                            <Pause className="mr-2 h-4 w-4" />
-                            Revisar cuenta
-                          </DropdownMenuItem>
                         </DropdownMenuContent>
                       </DropdownMenu>
                     </TableCell>
@@ -528,6 +544,32 @@ export default function TenantsPage() {
                       >
                         <KeyRound className="mr-2 h-4 w-4" />
                         Definir contrasena temporal
+                      </Button>
+                    )}
+                    {canManageServiceStatus && (
+                      <Button
+                        variant="outline"
+                        className={`w-full ${selectedTenant.status === 'suspended' ? '' : 'text-destructive hover:text-destructive'}`}
+                        disabled={busyKey === `SET_TENANT_SERVICE_STATUS:${selectedTenant.id}`}
+                        onClick={async () => {
+                          const nextStatus = selectedTenant.status === 'suspended' ? 'active' : 'suspended'
+                          const actionLabel = nextStatus === 'suspended' ? 'pausar' : 'reactivar'
+                          const reason = nextStatus === 'suspended' ? 'Pago pendiente' : 'Pago regularizado'
+                          const confirmed = window.confirm(`¿Seguro que deseas ${actionLabel} el servicio de "${selectedTenant.name}"?`)
+                          if (!confirmed) return
+                          await setTenantServiceStatus(selectedTenant.id, nextStatus, reason)
+                        }}
+                      >
+                        {selectedTenant.status === 'suspended' ? (
+                          <CheckCircle className="mr-2 h-4 w-4" />
+                        ) : (
+                          <Pause className="mr-2 h-4 w-4" />
+                        )}
+                        {busyKey === `SET_TENANT_SERVICE_STATUS:${selectedTenant.id}`
+                          ? 'Actualizando...'
+                          : selectedTenant.status === 'suspended'
+                            ? 'Reactivar servicio'
+                            : 'Pausar servicio'}
                       </Button>
                     )}
                     {canDeleteTenant && (

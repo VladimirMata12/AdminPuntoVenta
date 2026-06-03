@@ -100,6 +100,7 @@ interface RawTenant {
   id: string
   name: string
   slug: string
+  status?: TenantStatus | null
   created_at: string
 }
 
@@ -233,6 +234,14 @@ interface DeleteTenantResult {
   tenantSlug: string
 }
 
+interface SetTenantServiceStatusResult {
+  tenantId: string
+  tenantName: string
+  tenantSlug: string
+  previousStatus?: TenantStatus | null
+  status: TenantStatus
+}
+
 const emptyWorkspaceData: AdminWorkspaceData = {
   owners: [],
   leads: [],
@@ -310,7 +319,8 @@ function normalizeOnboardingStatus(
   return 'not_started'
 }
 
-function deriveTenantStatus(onboardingStatus: OnboardingStatus): TenantStatus {
+function deriveTenantStatus(onboardingStatus: OnboardingStatus, serviceStatus?: TenantStatus | null): TenantStatus {
+  if (serviceStatus && ['active', 'inactive', 'suspended'].includes(serviceStatus)) return serviceStatus
   if (onboardingStatus === 'blocked') return 'suspended'
   if (onboardingStatus === 'not_started' || onboardingStatus === 'invited') return 'inactive'
   return 'active'
@@ -597,7 +607,7 @@ function mapWorkspaceData(payload: AdminWorkspacePayload, printerLogs: PrinterSu
       adminEmail: String(adminUser?.email || sourceLead?.contactEmail || 'sin-correo'),
       adminName: String(adminUser?.full_name || sourceLead?.contactName || 'Sin administrador'),
       adminAuthId: adminUser?.auth_id || null,
-      status: deriveTenantStatus(onboardingStatus),
+      status: deriveTenantStatus(onboardingStatus, tenant.status),
       onboardingStatus,
       currentStep: (onboarding?.current_step || 'welcome') as OnboardingStep,
       loginUrl: `${APP_BASE_URL}/${tenant.slug}/login`,
@@ -897,6 +907,36 @@ export function useAdminWorkspace() {
     }
   }, [fetchWorkspace])
 
+  const setTenantServiceStatus = useCallback(async (
+    tenantId: string,
+    status: TenantStatus,
+    reason?: string,
+  ): Promise<SetTenantServiceStatusResult | null> => {
+    setBusyKey(`SET_TENANT_SERVICE_STATUS:${tenantId}`)
+    try {
+      const { data, error: functionError } = await supabase.functions.invoke<SetTenantServiceStatusResult>('admin-lead-action', {
+        body: {
+          action: 'SET_TENANT_SERVICE_STATUS',
+          payload: { tenantId, status, reason },
+        },
+      })
+
+      if (functionError) {
+        throw functionError
+      }
+
+      await fetchWorkspace({ silent: true })
+      toast.success(status === 'suspended' ? 'Servicio pausado correctamente.' : 'Servicio reactivado correctamente.')
+      return data || null
+    } catch (err: unknown) {
+      const message = await extractFunctionErrorMessage(err, 'No se pudo actualizar el estado del servicio.')
+      toast.error(message)
+      return null
+    } finally {
+      setBusyKey(null)
+    }
+  }, [fetchWorkspace])
+
   const recentActivities = useMemo(() => {
     return workspace.leadActivities
       .slice()
@@ -924,6 +964,7 @@ export function useAdminWorkspace() {
     deleteLead,
     updateLead,
     setTenantTemporaryPassword,
+    setTenantServiceStatus,
     deleteTenant,
   }
 }
